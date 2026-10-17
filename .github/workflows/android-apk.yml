@@ -4,7 +4,12 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "SEYRO_Lite_Light/**"
+      - "SEYRO_Lite_Light/app/**"
+      - "SEYRO_Lite_Light/build.gradle"
+      - "SEYRO_Lite_Light/settings.gradle"
+      - "SEYRO_Lite_Light/gradle.properties"
+      - "SEYRO_Lite_Light/gradle/**"
+      - "SEYRO_Lite_Light/gradlew"
       - ".github/workflows/android-apk.yml"
 
 concurrency:
@@ -12,15 +17,20 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Set build metadata
+        id: meta
+        run: echo "version_name=0.9.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -37,8 +47,38 @@ jobs:
           test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: Build debug APK
+      - name: Download Xray Android library
+        run: |
+          mkdir -p SEYRO_Lite_Light/app/libs
+          curl -fL --retry 3 https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.10.10/libv2ray.aar -o SEYRO_Lite_Light/app/libs/libv2ray.aar
+          curl -fL --retry 3 https://github.com/heiher/hev-socks5-tunnel/releases/download/2.18.0/hev-socks5-tunnel.aar -o SEYRO_Lite_Light/app/libs/hev-socks5-tunnel.aar
+      - name: Configure persistent APK signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository Actions secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > SEYRO_Lite_Light/app/seyro-release.jks
+          test -s SEYRO_Lite_Light/app/seyro-release.jks
+          keytool -list -keystore SEYRO_Lite_Light/app/seyro-release.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            -keypass "$ANDROID_KEY_PASSWORD" >/dev/null
+          echo "Signing keystore and credentials validated."
+      - name: Build signed APK
         working-directory: SEYRO_Lite_Light
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/SEYRO_Lite_Light/app/seyro-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle --no-daemon assembleDebug
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -47,3 +87,48 @@ jobs:
           path: SEYRO_Lite_Light/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Generate Russian release notes
+        env:
+          VERSION_NAME: ${{ steps.meta.outputs.version_name }}
+        run: |
+          LAST_TAG="$(git tag --list 'debug-build-*' --sort=-version:refname | head -n 1)"
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="$LAST_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+          RAW="$(git log "$RANGE" --no-merges --pretty=format:'%s' -n 12)"
+          NOTES=""
+          while IFS= read -r subject; do
+            [ -z "$subject" ] && continue
+            lower="$(printf '%s' "$subject" | tr '[:upper:]' '[:lower:]')"
+            case "$lower" in
+              *backoff*|*403*|*429*|*rate.limit*) line="• Уменьшено количество автоматических запросов и улучшена обработка ограничений сервера." ;;
+              *subscription*|*vip*|*traffic*|*metadata*) line="• Улучшено отображение подписки, VIP-статуса и статистики трафика." ;;
+              *update*|*release.note*|*apk*|*download*) line="• Улучшено обновление приложения и отображение информации о новых версиях." ;;
+              *animation*|*power.icon*|*clipping*|*interface*|*ui*|*design*|*layout*) line="• Улучшен интерфейс и анимация приложения." ;;
+              *probe*|*latency*|*quality*|*connection*) line="• Улучшено отображение состояния и качества VPN-соединения." ;;
+              *protocol*|*xhttp*|*grpc*|*tcp*|*xray*) line="• Улучшена работа VPN-подключения и сетевых профилей." ;;
+              *) line="• Выполнены технические улучшения и исправления приложения." ;;
+            esac
+            case "$NOTES" in *"$line"*) ;; *) NOTES="${NOTES}${NOTES:+
+          }$line" ;; esac
+          done <<EOF
+          $RAW
+          EOF
+          if [ -z "$NOTES" ]; then
+            NOTES="• Исправлены ошибки и повышена стабильность приложения."
+          fi
+          {
+            echo "Что нового в SEYRO Lite $VERSION_NAME"
+            echo
+            echo "$NOTES"
+          } > release-notes.md
+      - name: Publish successful build as a prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: debug-build-${{ github.run_number }}
+          name: SEYRO Lite ${{ steps.meta.outputs.version_name }}
+          body_path: release-notes.md
+          prerelease: true
+          files: SEYRO_Lite_Light/app/build/outputs/apk/debug/app-debug.apk

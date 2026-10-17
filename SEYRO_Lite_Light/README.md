@@ -1,52 +1,76 @@
-# SEYRO Lite — Android VPN client
+# SEYRO Lite
 
-Native Android application written in Java.
+**SEYRO Lite** — Android-клиент для подключения к VPN по подписке. Проект написан на Java и использует Android `VpnService`, Xray и HEV tun2socks для маршрутизации трафика.
 
-> **Branch status:** the `main` branch still contains the early UI prototype. The current working implementation, version **0.7.12** (`versionCode 12`), is being developed on [`feature/profile-subscription-link`](https://github.com/pavelzolotovng-oss/seyro-lite/tree/feature/profile-subscription-link/SEYRO_Lite_Light). Use that branch when building the current VPN client; do not use the older `main` APK as the current release.
+> **Статус:** проект активно развивается. APK из GitHub Releases помечаются как prerelease/test builds. Перед повседневным использованием проверяйте конкретную сборку на своём устройстве.
 
-## Current development version (0.7.12)
+## Возможности
 
-The implementation on `feature/profile-subscription-link` includes:
+- Импорт и хранение ссылки подписки на устройстве.
+- Работа с профилями VLESS + REALITY.
+- Поддержка транспортов TCP, XHTTP и gRPC (доступность зависит от параметров подписки/профиля).
+- Выбор профиля и подключение через системный VPN-интерфейс Android.
+- Маршрутизация VPN-трафика через HEV tun2socks к локальному SOCKS-входу Xray.
+- Диагностический журнал для поиска проблем.
+- Проверка новых версий и предложение установить обновление из GitHub Releases.
+- Автоматическая сборка APK в GitHub Actions.
 
-- VLESS + REALITY subscription profiles.
-- TCP and XHTTP transports, with automatic or manual profile selection.
-- Android VPN tunnel routed via HEV tun2socks to the local Xray SOCKS inbound.
-- Locally stored subscription link, clipboard paste, and save/cancel controls.
-- Connection state, selected transport, and debug log screen.
+## Скачать APK
 
-TCP and XHTTP were manually checked on a device with build 67. The signed 0.7.12 build must still be installed and checked on-device, including update-in-place behavior, before it is treated as verified.
+Откройте **[Releases](https://github.com/pavelzolotovng-oss/seyro-lite/releases)** и выберите самый новый релиз **SEYRO Lite**. В разделе **Assets** скачайте `app-debug.apk`.
 
-## Build the current development version
+Релизы сейчас публикуются как **Pre-release**. Android может запросить разрешение на установку приложений из браузера/источника загрузки. Устанавливайте APK только из доверенного источника. Обновление поверх существующей установки возможно, если APK подписан тем же ключом и имеет более высокий `versionCode`.
 
-1. Open the [Build SEYRO Lite APK workflow](https://github.com/pavelzolotovng-oss/seyro-lite/actions/workflows/android-apk.yml).
-2. Select **Run workflow**.
-3. Choose branch `feature/profile-subscription-link`.
-4. Start the workflow and wait for a green check.
-5. Download artifact `seyro-lite-debug-apk`.
+## Структура репозитория
 
-The workflow uses JDK 17 and Gradle 8.9, downloads the required Xray and HEV AAR files, builds the debug APK, and keeps the artifact for 14 days.
+- `app/` — Android-приложение.
+  - `app/src/main/java/` — Java-код приложения.
+  - `app/src/main/res/` — ресурсы Android.
+  - `app/build.gradle` — конфигурация Android-приложения и версия.
+- `build.gradle`, `settings.gradle`, `gradle.properties` — настройки Gradle в корне репозитория.
+- `.github/workflows/android-apk.yml` — автоматическая сборка и публикация APK.
+- `CHANGELOG.md` — журнал изменений.
 
-## Persistent APK signing
+Android-проект расположен непосредственно в корне репозитория: откройте корневую папку `seyro-lite/` в Android Studio.
 
-To build signed APKs that can be updated in place, the development branch expects four **repository Actions secrets**:
+## Сборка через GitHub Actions
 
-- `ANDROID_KEYSTORE_BASE64` — base64 contents of `seyro-release.jks`.
-- `ANDROID_KEYSTORE_PASSWORD` — keystore password.
-- `ANDROID_KEY_ALIAS` — currently `seyro-release`.
-- `ANDROID_KEY_PASSWORD` — private-key password.
+1. Откройте вкладку **Actions**.
+2. Выберите workflow **Build SEYRO Lite APK**.
+3. Нажмите **Run workflow** и выберите нужную ветку.
+4. Дождитесь успешного завершения сборки.
+5. Скачайте APK из **Artifacts** или откройте созданный релиз во вкладке **Releases**.
 
-Configure them under **Settings → Secrets and variables → Actions → Repository secrets**. Existing workflow runs do not receive secrets added after they start; start a new run after adding or correcting secrets.
+Для подписи workflow использует секреты репозитория:
 
-Never commit the keystore, Base64 value, or passwords to Git. Back up `seyro-release.jks` securely. Future updates must use this same key and a higher `versionCode`.
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
 
-The initial move from the previous automatically generated debug certificate to the persistent key requires one uninstall/reinstall. After the migration, explicitly test installing a newer APK over the existing app without uninstalling.
+**Не публикуйте keystore, пароли, токены или приватные ссылки подписки.** Для совместимости обновлений необходимо сохранять исходный ключ подписи.
 
-## Application information (current development branch)
+## Локальная сборка
 
-- Application ID: `com.seyro.lite`
-- Version name: `0.7.12`
-- Version code: `12`
-- Minimum Android: Android 10 (API 29)
-- Compile SDK / target SDK: 35
+1. Откройте корневую папку репозитория `seyro-lite/` в Android Studio.
+2. Установите JDK 17 и Android SDK 35.
+3. Выполните Gradle Sync.
+4. Настройте переменные подписи, соответствующие конфигурации workflow, и запустите задачу `assembleDebug`.
 
-The `main` branch remains an earlier prototype until the development branch is merged.
+Workflow скачивает необходимые AAR-библиотеки Xray и HEV во время сборки; эти бинарные файлы не требуется вручную хранить в репозитории.
+
+## Требования и сведения
+
+- **Язык:** Java.
+- **Application ID:** `com.seyro.lite`.
+- **Минимальная версия Android:** Android 10 (API 29).
+- **Compile/Target SDK:** 35.
+- **Версия сборки:** `versionName` и `versionCode` формируются на основе номера запуска GitHub Actions.
+
+## Безопасность и конфиденциальность
+
+Ссылка подписки может содержать секретные данные. Не добавляйте её в публичные issues, скриншоты, коммиты или диагностические логи. Не публикуйте содержимое keystore и секреты GitHub Actions.
+
+## Журнал изменений
+
+Подробная история изменений ведётся в [CHANGELOG.md](CHANGELOG.md) и в [истории коммитов](https://github.com/pavelzolotovng-oss/seyro-lite/commits/main).

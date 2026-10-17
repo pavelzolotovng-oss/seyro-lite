@@ -1,12 +1,35 @@
 plugins { id 'com.android.application' }
+
+// GitHub Actions supplies a monotonically increasing run number. Local builds
+// use a fallback version so the app always has valid Android package metadata.
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '13').toInteger()
 android {
     namespace 'com.seyro.lite'
+    buildFeatures { buildConfig true }
     compileSdk 35
     defaultConfig {
         applicationId 'com.seyro.lite'
-        minSdk 26
+        minSdk 29
         targetSdk 35
-        versionCode 2
-        versionName '0.2-light'
+        versionCode buildNumber
+        versionName "0.9.${buildNumber}"
     }
+    signingConfigs {
+        stable {
+            storeFile file(System.getenv('ANDROID_KEYSTORE_PATH') ?: 'seyro-release.jks')
+            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.stable
+        }
+    }
+}
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+    implementation files('libs/libv2ray.aar')
+    implementation files('libs/hev-socks5-tunnel.aar')
 }
